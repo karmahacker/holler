@@ -223,6 +223,49 @@ This means two agents on different networks behind NAT can find each other witho
 
 holler is a Unix tool. It reads stdin, writes stdout, and exits. Integrate it with any agent framework by shelling out.
 
+### JavaScript / TypeScript Wrapper
+
+For Node.js applications, use the `holler-js` TypeScript wrapper in the `js/` directory:
+
+```bash
+cd js/
+npm install
+npm run build
+```
+
+```typescript
+import { Holler } from './lib/index.js';
+
+const holler = new Holler();
+
+// Initialize and get PeerID
+const peerId = await holler.init();
+console.log('My PeerID:', peerId);
+
+// Send a message
+await holler.send('12D3KooW...', 'Hello from JavaScript!');
+
+// Listen for messages
+const listener = holler.listen((message) => {
+  console.log('Received:', message.body, 'from', message.from);
+  
+  // Auto-reply
+  holler.send(message.from, `Got: ${message.body}`);
+});
+
+// Stop after 30 seconds
+setTimeout(() => listener.kill(), 30000);
+```
+
+The wrapper provides:
+- **Promise-based API** for all holler commands
+- **Type-safe interfaces** for messages and responses
+- **Streaming support** for listening to messages
+- **Contact management** with async methods
+- **Error handling** with proper exceptions
+
+See `js/README.md` for complete API documentation.
+
 ### Shell / Subprocess
 
 ```bash
@@ -348,6 +391,207 @@ Expose holler as tools in an MCP server:
       "description": "Get this agent's PeerID"
     }
   ]
+}
+```
+
+## Integration Examples
+
+### Multi-Agent Task Distribution
+
+```typescript
+// Agent coordinator
+import { Holler } from 'holler-js';
+
+class TaskCoordinator {
+  private holler = new Holler();
+  private workers: string[] = [];
+  private tasks = new Map();
+
+  async initialize() {
+    await this.holler.id(); // Auto-init
+    
+    // Listen for worker registrations and task results
+    this.holler.listen((message) => {
+      const data = JSON.parse(message.body);
+      
+      if (data.type === 'worker-register') {
+        this.workers.push(message.from);
+        console.log(`Worker registered: ${message.from}`);
+      }
+      
+      if (data.type === 'task-result') {
+        this.handleTaskResult(data, message.from);
+      }
+    });
+  }
+  
+  async distributeTask(taskDescription: string) {
+    const taskId = `task-${Date.now()}`;
+    const task = {
+      type: 'task-assignment',
+      id: taskId,
+      description: taskDescription,
+      timestamp: Date.now()
+    };
+    
+    // Send to available workers
+    for (const worker of this.workers) {
+      await this.holler.send(worker, JSON.stringify(task));
+    }
+    
+    return taskId;
+  }
+}
+
+// Worker agent
+class TaskWorker {
+  private holler = new Holler();
+  private coordinatorId: string;
+  
+  constructor(coordinatorId: string) {
+    this.coordinatorId = coordinatorId;
+  }
+  
+  async initialize() {
+    await this.holler.id();
+    
+    // Register with coordinator
+    await this.holler.send(this.coordinatorId, JSON.stringify({
+      type: 'worker-register',
+      capabilities: ['text-processing', 'data-analysis']
+    }));
+    
+    // Listen for tasks
+    this.holler.listen((message) => {
+      const task = JSON.parse(message.body);
+      if (task.type === 'task-assignment') {
+        this.executeTask(task);
+      }
+    });
+  }
+}
+```
+
+### Agent Mesh Network
+
+```typescript
+// Peer agent with discovery and message routing
+class MeshAgent {
+  private holler = new Holler();
+  private peers = new Set<string>();
+  private messageCache = new Set<string>();
+  
+  async initialize() {
+    const peerId = await this.holler.id();
+    console.log(`Mesh agent started: ${peerId}`);
+    
+    // Periodic peer discovery
+    setInterval(() => this.discoverPeers(), 30000);
+    
+    // Message handling with routing
+    this.holler.listen((message) => {
+      // Prevent loops
+      if (this.messageCache.has(message.id)) return;
+      this.messageCache.add(message.id);
+      
+      const data = JSON.parse(message.body);
+      
+      if (data.type === 'peer-discovery') {
+        this.peers.add(message.from);
+        this.announceSelf(message.from);
+      }
+      
+      if (data.type === 'broadcast' && data.hops < 3) {
+        // Re-broadcast to other peers
+        this.forwardBroadcast(data, message.from);
+      }
+    });
+    
+    // Initial peer discovery
+    this.broadcastDiscovery();
+  }
+  
+  async broadcastMessage(content: string) {
+    const broadcast = {
+      type: 'broadcast',
+      content,
+      origin: await this.holler.id(),
+      hops: 0,
+      timestamp: Date.now()
+    };
+    
+    for (const peer of this.peers) {
+      await this.holler.send(peer, JSON.stringify(broadcast));
+    }
+  }
+}
+```
+
+### OpenClaw Skill Integration
+
+Create custom skills using the holler wrapper:
+
+```typescript
+// ~/.openclaw/skills/holler-messenger/index.ts
+import { Holler } from '../../../holler/js/lib/index.js';
+
+export class HollerMessengerSkill {
+  private holler = new Holler();
+  
+  async execute(command: string, args: string[]): Promise<string> {
+    switch (command) {
+      case 'send':
+        if (args.length < 2) return 'Usage: send <peer> <message>';
+        await this.holler.send(args[0], args.slice(1).join(' '));
+        return `Message sent to ${args[0]}`;
+        
+      case 'listen':
+        const timeout = args[0] ? parseInt(args[0]) : 30;
+        return await this.listen(timeout);
+        
+      case 'contacts':
+        const contacts = await this.holler.contacts();
+        return contacts.map(c => `${c.alias}: ${c.peerId}`).join('\n');
+        
+      case 'broadcast':
+        if (args.length === 0) return 'Usage: broadcast <message>';
+        return await this.broadcast(args.join(' '));
+        
+      default:
+        return `Unknown command: ${command}`;
+    }
+  }
+  
+  private async listen(timeoutSeconds: number): Promise<string> {
+    const messages: string[] = [];
+    
+    const listener = this.holler.listen((message) => {
+      messages.push(`[${message.from}]: ${message.body}`);
+    });
+    
+    await new Promise(resolve => setTimeout(resolve, timeoutSeconds * 1000));
+    listener.kill();
+    
+    return messages.length > 0 
+      ? messages.join('\n')
+      : 'No messages received';
+  }
+  
+  private async broadcast(message: string): Promise<string> {
+    const contacts = await this.holler.contacts();
+    let sent = 0;
+    
+    for (const contact of contacts) {
+      try {
+        await this.holler.send(contact.peerId, message);
+        sent++;
+      } catch (error) {
+        console.error(`Failed to send to ${contact.alias}:`, error.message);
+      }
+    }
+    
+    return `Broadcast sent to ${sent}/${contacts.length} contacts`;
+  }
 }
 ```
 

@@ -1,0 +1,39 @@
+{
+  "name": "holler-js",
+  "version": "1.0.0",
+  "description": "TypeScript/JavaScript wrapper for holler P2P agent messaging",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "test": "node lib/example.js"
+  },
+  "keywords": [
+    "p2p",
+    "libp2p",
+    "agent",
+    "messaging",
+    "holler",
+    "ai",
+    "typescript"
+  ],
+  "author": "OpenClaw Community",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "files": [
+    "lib",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/1F47E/holler.git",
+    "directory": "js"
+  }
+}
