@@ -73,10 +73,10 @@ func NewHost(ctx context.Context, privKey crypto.PrivKey, dhtPtr **dht.IpfsDHT) 
 	h, err := libp2p.New(
 		libp2p.Identity(privKey),
 		libp2p.ListenAddrStrings(
-			"/ip4/0.0.0.0/tcp/0",
-			"/ip4/0.0.0.0/udp/0/quic-v1",
-			"/ip6/::/tcp/0",
-			"/ip6/::/udp/0/quic-v1",
+			"/ip4/0.0.0.0/tcp/46875",
+			"/ip4/0.0.0.0/udp/46875/quic-v1",
+			"/ip6/::/tcp/46875",
+			"/ip6/::/udp/46875/quic-v1",
 		),
 		libp2p.EnableRelay(),
 		libp2p.EnableHolePunching(),
