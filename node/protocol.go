@@ -55,6 +55,7 @@ func RegisterHandler(h host.Host, privKey crypto.PrivKey, myID peer.ID, handler 
 		// Send ack back — body contains the original message ID
 		fromID, _ := peer.Decode(env.From)
 		ack := message.NewEnvelope(myID, fromID, "ack", env.ID)
+		ack.ThreadID = env.ThreadID
 		ack.Sign(privKey)
 		ackData, _ := ack.Marshal()
 		s.SetWriteDeadline(time.Now().Add(10 * time.Second))

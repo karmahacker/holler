@@ -23,8 +23,9 @@ type Envelope struct {
 	Ts      int64             `json:"ts"`
 	Type    string            `json:"type"`
 	Body    string            `json:"body"`
-	ReplyTo string            `json:"reply_to,omitempty"`
-	Meta    map[string]string `json:"meta,omitempty"`
+	ReplyTo  string            `json:"reply_to,omitempty"`
+	ThreadID string            `json:"thread_id,omitempty"`
+	Meta     map[string]string `json:"meta,omitempty"`
 	Sig     string            `json:"sig"`
 }
 

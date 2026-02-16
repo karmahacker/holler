@@ -25,6 +25,7 @@ var (
 	sendPeerAddr string
 	sendType     string
 	sendReplyTo  string
+	sendThread   string
 	sendMeta     []string
 )
 
@@ -33,6 +34,7 @@ func init() {
 	sendCmd.Flags().StringVar(&sendPeerAddr, "peer", "", "Direct multiaddr of the peer (skip DHT lookup)")
 	sendCmd.Flags().StringVar(&sendType, "type", "message", "Message type (message, task-proposal, task-result, capability-query, status-update)")
 	sendCmd.Flags().StringVar(&sendReplyTo, "reply-to", "", "Message ID this is replying to (for threading)")
+	sendCmd.Flags().StringVar(&sendThread, "thread", "", "Thread ID to continue a conversation")
 	sendCmd.Flags().StringSliceVar(&sendMeta, "meta", nil, "Metadata key=value pairs (can be repeated)")
 	rootCmd.AddCommand(sendCmd)
 }
@@ -87,6 +89,14 @@ var sendCmd = &cobra.Command{
 		// Create and sign envelope
 		env := message.NewEnvelope(fromID, toID, sendType, body)
 		env.ReplyTo = sendReplyTo
+		switch {
+		case sendThread != "":
+			env.ThreadID = sendThread
+		case sendReplyTo != "":
+			env.ThreadID = sendReplyTo
+		default:
+			env.ThreadID = env.ID
+		}
 		if len(sendMeta) > 0 {
 			env.Meta = make(map[string]string)
 			for _, kv := range sendMeta {
