@@ -200,6 +200,20 @@ holler --tor send alice "hello via tor"
 holler --tor ping alice
 ```
 
+### Vanity Onion Addresses
+
+Want a recognizable `.onion` address instead of random characters? Use [onion-gen](https://github.com/1F47E/onion-gen) — a Rust vanity onion address generator.
+
+```bash
+# Generate a 6-char prefix vanity address
+onion-gen --prefix yapper
+
+# yapperzyphijmlufz6k733xgxqg74kadqoeyo2ev26xfjfekwmcn6zyd.onion
+# Found in 14m15s — 783M attempts at 916K/sec on 23 workers
+```
+
+Each extra character is ~32x harder (base32). 5-6 chars is the sweet spot — readable prefix without waiting hours. Copy the generated key files to `~/.holler/` to use with holler.
+
 ### How It Works
 
 - **No libp2p** — Tor mode is a completely separate transport. No DHT, no PeerIDs, no Noise protocol.
