@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/cretz/bine/torutil"
+	bineed25519 "github.com/cretz/bine/torutil/ed25519"
 	"github.com/google/uuid"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -29,7 +31,7 @@ type Envelope struct {
 	Sig     string            `json:"sig"`
 }
 
-// NewEnvelope creates a new unsigned envelope.
+// NewEnvelope creates a new unsigned envelope with libp2p PeerIDs (clearnet mode).
 func NewEnvelope(from, to peer.ID, msgType, body string) *Envelope {
 	return &Envelope{
 		V:    1,
@@ -42,12 +44,26 @@ func NewEnvelope(from, to peer.ID, msgType, body string) *Envelope {
 	}
 }
 
+// NewEnvelopeTor creates a new unsigned envelope with onion addresses (Tor mode).
+func NewEnvelopeTor(fromOnion, toOnion string, msgType, body string) *Envelope {
+	return &Envelope{
+		V:    1,
+		ID:   uuid.New().String(),
+		From: fromOnion,
+		To:   toOnion,
+		Ts:   time.Now().Unix(),
+		Type: msgType,
+		Body: body,
+	}
+}
+
 // signPayload returns the bytes to sign: id+from+to+ts+type+body+reply_to+meta.
 func (e *Envelope) signPayload() []byte {
 	payload := fmt.Sprintf("%s%s%s%d%s%s%s", e.ID, e.From, e.To, e.Ts, e.Type, e.Body, e.ReplyTo)
 	if len(e.Meta) > 0 {
-		metaJSON, _ := json.Marshal(e.Meta)
-		payload += string(metaJSON)
+		if metaJSON, err := json.Marshal(e.Meta); err == nil {
+			payload += string(metaJSON)
+		}
 	}
 	return []byte(payload)
 }
@@ -77,6 +93,32 @@ func (e *Envelope) Verify() (bool, error) {
 		return false, fmt.Errorf("decode signature: %w", err)
 	}
 	return pubKey.Verify(e.signPayload(), sig)
+}
+
+// SignTor signs the envelope with a bine ed25519 keypair (Tor mode).
+func (e *Envelope) SignTor(kp bineed25519.KeyPair) error {
+	sig := bineed25519.Sign(kp, e.signPayload())
+	e.Sig = base64.StdEncoding.EncodeToString(sig)
+	return nil
+}
+
+// VerifyTor verifies the envelope signature using the sender's onion address.
+// Extracts the ed25519 public key from the From field (56-char onion service ID).
+func (e *Envelope) VerifyTor() (bool, error) {
+	pubKey, err := PubKeyFromOnion(e.From)
+	if err != nil {
+		return false, fmt.Errorf("extract public key from onion address: %w", err)
+	}
+	sig, err := base64.StdEncoding.DecodeString(e.Sig)
+	if err != nil {
+		return false, fmt.Errorf("decode signature: %w", err)
+	}
+	return pubKey.Verify(e.signPayload(), sig), nil
+}
+
+// PubKeyFromOnion extracts the ed25519 public key from a 56-char onion service ID.
+func PubKeyFromOnion(onionAddr string) (bineed25519.PublicKey, error) {
+	return torutil.PublicKeyFromV3OnionServiceID(onionAddr)
 }
 
 // Marshal serializes the envelope to JSON bytes (single line, no trailing newline).

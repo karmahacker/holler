@@ -31,6 +31,15 @@ var pingCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		target := args[0]
 
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer cancel()
+
+		// Tor mode: entirely separate path
+		if node.TorMode {
+			return pingViaTor(ctx, target)
+		}
+
+		// Clearnet
 		privKey, err := identity.LoadOrFail()
 		if err != nil {
 			return err
@@ -51,9 +60,7 @@ var pingCmd = &cobra.Command{
 			return fmt.Errorf("invalid peer ID %q: %w", resolved, err)
 		}
 
-		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-		defer cancel()
-
+		// Clearnet path
 		var d *dht.IpfsDHT
 		h, err := node.NewHost(ctx, privKey, &d)
 		if err != nil {
@@ -101,7 +108,6 @@ var pingCmd = &cobra.Command{
 			}
 		}
 
-		// Send ping and measure round-trip
 		env := message.NewEnvelope(fromID, toID, "ping", "")
 		if err := env.Sign(privKey); err != nil {
 			return err
@@ -117,4 +123,71 @@ var pingCmd = &cobra.Command{
 		fmt.Printf("pong from %s: rtt=%s\n", toID.String()[:16]+"...", rtt.Round(time.Millisecond))
 		return nil
 	},
+}
+
+func pingViaTor(ctx context.Context, target string) error {
+	if err := node.CheckTorSOCKS(); err != nil {
+		return err
+	}
+
+	hollerDir, err := identity.HollerDir()
+	if err != nil {
+		return err
+	}
+	onionKey, err := node.LoadOrCreateOnionKey(hollerDir)
+	if err != nil {
+		return err
+	}
+	myOnion := identity.OnionAddrFromKey(onionKey)
+	kp := identity.OnionKeyPairFromBine(onionKey)
+
+	// Resolve target
+	torContacts, err := identity.LoadTorContacts()
+	if err != nil {
+		return err
+	}
+	toOnion := torContacts.Resolve(target)
+	if !identity.ValidOnionAddr(toOnion) {
+		return fmt.Errorf("cannot resolve %q to a Tor contact — add it with: holler contacts add --tor %s <onion-address>", target, target)
+	}
+
+	env := message.NewEnvelopeTor(myOnion, toOnion, "ping", "")
+	if err := env.SignTor(kp); err != nil {
+		return fmt.Errorf("sign message: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Tor: connecting to %s.onion...\n", toOnion[:16])
+	connectCtx, connectCancel := context.WithTimeout(ctx, 120*time.Second)
+	defer connectCancel()
+
+	conn, err := node.DialTor(connectCtx, toOnion, 9000)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Tor: peer %s.onion unreachable: %v\n", toOnion[:16], err)
+		return nil
+	}
+	defer conn.Close()
+
+	start := time.Now()
+	if err := node.SendTor(conn, env); err != nil {
+		fmt.Fprintf(os.Stderr, "Tor: send failed: %v\n", err)
+		return nil
+	}
+
+	ack, err := node.RecvTor(conn)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Tor: no ack: %v\n", err)
+		return nil
+	}
+	rtt := time.Since(start)
+
+	if ack.Type == "ack" {
+		if valid, verr := ack.VerifyTor(); verr != nil || !valid {
+			fmt.Fprintf(os.Stderr, "Tor: ack signature invalid\n")
+			return nil
+		}
+		fmt.Printf("pong from %s.onion via Tor: rtt=%s\n", toOnion[:16], rtt.Round(time.Millisecond))
+	} else {
+		fmt.Fprintf(os.Stderr, "Tor: unexpected response type: %s\n", ack.Type)
+	}
+	return nil
 }

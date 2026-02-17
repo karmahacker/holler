@@ -70,7 +70,7 @@ func LoadOutbox(hollerDir string) ([]OutboxEntry, error) {
 	return entries, scanner.Err()
 }
 
-// WriteOutbox overwrites the outbox file with the given entries.
+// WriteOutbox atomically overwrites the outbox file with the given entries.
 func WriteOutbox(hollerDir string, entries []OutboxEntry) error {
 	path := OutboxPath(hollerDir)
 	if len(entries) == 0 {
@@ -79,21 +79,30 @@ func WriteOutbox(hollerDir string, entries []OutboxEntry) error {
 		}
 		return nil
 	}
-	f, err := os.Create(path)
+	// Write to temp file, then atomic rename
+	tmp := path + ".tmp"
+	f, err := os.Create(tmp)
 	if err != nil {
-		return fmt.Errorf("create outbox: %w", err)
+		return fmt.Errorf("create outbox tmp: %w", err)
 	}
-	defer f.Close()
 	for _, entry := range entries {
 		data, err := json.Marshal(entry)
 		if err != nil {
+			f.Close()
+			os.Remove(tmp)
 			return fmt.Errorf("marshal outbox entry: %w", err)
 		}
 		if _, err := f.Write(append(data, '\n')); err != nil {
+			f.Close()
+			os.Remove(tmp)
 			return fmt.Errorf("write outbox entry: %w", err)
 		}
 	}
-	return nil
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("close outbox tmp: %w", err)
+	}
+	return os.Rename(tmp, path)
 }
 
 // NextBackoff returns the next retry delay based on attempt count.

@@ -6,7 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/cretz/bine/control"
+	"github.com/cretz/bine/torutil"
+	bineed25519 "github.com/cretz/bine/torutil/ed25519"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
@@ -107,4 +111,14 @@ func KeyExists() bool {
 	}
 	_, err = os.Stat(path)
 	return err == nil
+}
+
+// OnionKeyPairFromBine extracts the bine ed25519 KeyPair from a control.ED25519Key.
+func OnionKeyPairFromBine(key *control.ED25519Key) bineed25519.KeyPair {
+	return key.KeyPair
+}
+
+// OnionAddrFromKey computes the 56-char lowercase onion service ID from a bine key.
+func OnionAddrFromKey(key *control.ED25519Key) string {
+	return strings.ToLower(torutil.OnionServiceIDFromPrivateKey(key.KeyPair))
 }

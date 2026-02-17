@@ -100,3 +100,4 @@ func NewHost(ctx context.Context, privKey crypto.PrivKey, dhtPtr **dht.IpfsDHT) 
 
 	return h, nil
 }
+
